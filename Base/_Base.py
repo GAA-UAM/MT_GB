@@ -19,8 +19,8 @@ from sklearn.utils import check_scalar
 
 DTYPE = _tree.DTYPE
 
-
-class CondensedGradientBoosting(BaseGradientBoosting):
+            
+class MTCondensedGradientBoosting(BaseGradientBoosting):
 
     def __init__(self,
                  n_estimators=100,
@@ -66,9 +66,23 @@ class CondensedGradientBoosting(BaseGradientBoosting):
                          tol=tol,
                          init=init,
                          random_state=random_state)
+        
+    def _init_state(self):
+        """Initialize model state and allocate model state data structures."""
+
+        self.init_ = self.init
+        if self.init_ is None:
+            self.init_ = self._loss.init_estimator()
+
+        self.estimators_ = np.empty((self.n_estimators, self.T, self._loss.K), dtype=object)
+        self.train_score_ = np.zeros((self.n_estimators,), dtype=np.float64)
+        # do oob?
+        if self.subsample < 1.0:
+            self.oob_improvement_ = np.zeros((self.n_estimators), dtype=np.float64)
 
     def _fit_stage(self,
                    i,
+                   r, # task
                    X,
                    y,
                    raw_predictions,
@@ -127,12 +141,13 @@ class CondensedGradientBoosting(BaseGradientBoosting):
                                          learning_rate=self.learning_rate,
                                          k=k)
 
-            self.estimators_[i, k] = tree
+            self.estimators_[i, r, k] = tree
 
         return raw_predictions
 
     def _fit_stages(self,
                     X,
+                    t,
                     y,
                     raw_predictions,
                     sample_weight,
@@ -180,30 +195,39 @@ class CondensedGradientBoosting(BaseGradientBoosting):
         i = begin_at_stage
         _random_sample_mask = _gradient_boosting._random_sample_mask
         for i in range(begin_at_stage, self.n_estimators):
-
-            # subsampling
             if do_oob:
-                sample_mask = _random_sample_mask(n_samples, n_inbag,
-                                                  random_state)
-                # OOB score before adding this stage
-                old_oob_score = loss_(y[~sample_mask],
-                                      raw_predictions[~sample_mask],
-                                      sample_weight[~sample_mask])
+                sample_mask = _random_sample_mask(n_samples, n_inbag, # n_samples_r instead of n_samples
+                                                random_state)
+            for r_label, r in self.tasks_dic.iter():
+                idx_r = (t == r_label)
+                X_r = X[idx_r]
+                X_csc_r = X_csc[idx_r]
+                X_csr_r = X_csr[idx_r]
+                y_r = y[idx_r]
+                raw_predictions_r = raw_predictions[idx_r]
+                sample_weight_r = sample_weight[idx_r]
+                # subsampling
+                if do_oob:
+                    sample_mask_r = sample_mask[idx_r]
+                    # OOB score before adding this stage
+                    old_oob_score = loss_(y_r[~sample_mask_r],
+                                        raw_predictions_r[~sample_mask_r],
+                                        sample_weight_r[~sample_mask_r])
 
-            # fit next stage of trees
-            raw_predictions = self._fit_stage(i, X, y, raw_predictions,
-                                              sample_weight, sample_mask,
-                                              random_state, X_csc, X_csr)
+                # fit next stage of trees
+                raw_predictions[idx_r] = self._fit_stage(i, r, X_r, y_r, raw_predictions_r,
+                                                sample_weight_r, sample_mask_r,
+                                                random_state, X_csc_r, X_csr_r)
 
             # track loss
             if do_oob:
                 self.train_score_[i] = loss_(y[sample_mask],
-                                             raw_predictions[sample_mask],
-                                             sample_weight[sample_mask])
+                                            raw_predictions[sample_mask],
+                                            sample_weight[sample_mask])
                 self.oob_improvement_[i] = (
                     old_oob_score -
                     loss_(y[~sample_mask], raw_predictions[~sample_mask],
-                          sample_weight[~sample_mask]))
+                        sample_weight[~sample_mask]))
             else:
                 # no need to fancy index w/ no subsampling
                 self.train_score_[i] = loss_(y, raw_predictions, sample_weight)
@@ -367,11 +391,29 @@ class CondensedGradientBoosting(BaseGradientBoosting):
             include_boundaries="neither",
         )
 
-    def fit(self, X, y, sample_weight=None, monitor=None):
+    def _split_task(self, X):
+        X_task = X[:, self.task_info]
+        X_data = np.delete(X, self.task_info, axis=1).astype(float)
+        return X_data, X_task
+
+    def fit(self, X, y, sample_weight=None, monitor=None, task_info=-1):
 
         if not self.warm_start:
             self._clear_state()
+        
+        # Separate the task information from the data
+        if not isinstance(task_info, int):
+            raise ArithmeticError('task_info must be an integer')
+        self.task_info = task_info
+        
+        X_full = X
+        X, t = self._split_task(X_full)
 
+        unique = np.unique(t)
+        self.T = len(unique)
+        self.tasks_dic = dict(zip(unique, range(self.T)))
+        
+        # validate data
         X, y = self._validate_data(X,
                                    y,
                                    accept_sparse=['csr', 'csc', 'coo'],
@@ -455,7 +497,7 @@ class CondensedGradientBoosting(BaseGradientBoosting):
             self._resize_state()
 
         # fit the boosting stages
-        n_stages = self._fit_stages(X, y, raw_predictions, sample_weight,
+        n_stages = self._fit_stages(X, t, y, raw_predictions, sample_weight,
                                     self._rng, X_val, y_val, sample_weight_val,
                                     begin_at_stage, monitor)
 
@@ -483,20 +525,40 @@ class CondensedGradientBoosting(BaseGradientBoosting):
 
     def _raw_predict(self, X):
         """Return the sum of the trees raw predictions (+ init estimator)."""
-        raw_predictions = self._raw_predict_init(X)
+        raw_predictions = self._raw_predict_init(X) # init is common for all tasks
+
+        # separate tasks and data
+        X_full = X
+        X, t = self._split_task(X_full)
+        unique = np.unique(t)
+
         if raw_predictions.shape[1] == 1:
-            raw_predictions = np.squeeze(raw_predictions)
+            raw_predictions = np.squeeze(raw_predictions)        
         for i in range(self.n_estimators):
-            tree = self.estimators_[i, 0]
-            raw_predictions += (self.learning_rate * tree.predict(X))
+            for r_label in unique:
+                if r_label not in self.tasks_dic:
+                    raise ValueError("The task {} was not present in the training set".format(r_label))
+                tree = self.estimators_[i, self.tasks_dic[r_label], 0]
+                idx_r = (t == r_label)
+                raw_predictions[idx_r] += (self.learning_rate * tree.predict(X[idx_r]))
         return raw_predictions
 
     def _staged_raw_predict(self, X):
         X = check_array(X, dtype=DTYPE, order="C", accept_sparse='csr')
-        raw_predictions = self._raw_predict_init(X)
+        raw_predictions = self._raw_predict_init(X) # init is common for all tasks
+
+        # separate tasks and data
+        X_full = X
+        X, t = self._split_task(X_full)
+        unique = np.unique(t)
+
         if raw_predictions.shape[1] == 1:
             raw_predictions = np.squeeze(raw_predictions)
         for i in range(self.n_estimators):
-            tree = self.estimators_[i, 0]
-            raw_predictions += (self.learning_rate * tree.predict(X))
-            yield raw_predictions.copy()
+            for r_label in unique:
+                if r_label not in self.tasks_dic:
+                    raise ValueError("The task {} was not present in the training set".format(r_label))
+                tree = self.estimators_[i, self.tasks_dic[r_label], 0]
+                idx_r = (t == r_label)
+                raw_predictions[idx_r] += (self.learning_rate * tree.predict(X[idx_r]))
+        yield raw_predictions.copy()
