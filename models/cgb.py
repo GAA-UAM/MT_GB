@@ -1,10 +1,10 @@
 # Licence: GNU Lesser General Public License v2.1 (LGPL-2.1)
 
 from sklearn.ensemble import GradientBoostingClassifier
-from Base._Base import CondensedGradientBoosting
+from Base._Base import MTCondensedGradientBoosting
 
 
-class cgb_clf(GradientBoostingClassifier, CondensedGradientBoosting):
+class cgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
 
     def __init__(self,
                  *,
@@ -62,7 +62,7 @@ class cgb_clf(GradientBoostingClassifier, CondensedGradientBoosting):
                 self._loss._raw_prediction_to_decision(raw_predictions)
             yield self.classes_.take(encoded_labels, axis=0)
 
-class MTcgb_clf(GradientBoostingClassifier, CondensedGradientBoosting):
+class MTcgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
 
     def __init__(self,
                  *,
