@@ -17,6 +17,8 @@ from sklearn.model_selection._split import train_test_split
 from sklearn.utils.validation import check_array, check_random_state, column_or_1d, _check_sample_weight
 from sklearn.utils import check_scalar
 
+from icecream import ic
+
 DTYPE = _tree.DTYPE
 
             
@@ -92,7 +94,7 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
                    X_csc=None,
                    X_csr=None):
 
-        assert sample_mask.dtype == np.bool
+        assert sample_mask.dtype == bool
         loss = self._loss
 
         original_y = y
@@ -165,7 +167,7 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
         """
         n_samples = X.shape[0]
         do_oob = self.subsample < 1.0
-        sample_mask = np.ones((n_samples, ), dtype=np.bool)
+        sample_mask = np.ones((n_samples, ), dtype=bool)
         n_inbag = max(1, int(self.subsample * n_samples))
         loss_ = self._loss
 
@@ -198,17 +200,18 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
             if do_oob:
                 sample_mask = _random_sample_mask(n_samples, n_inbag, # n_samples_r instead of n_samples
                                                 random_state)
-            for r_label, r in self.tasks_dic.iter():
+            for r_label, r in self.tasks_dic.items():
                 idx_r = (t == r_label)
                 X_r = X[idx_r]
-                X_csc_r = X_csc[idx_r]
-                X_csr_r = X_csr[idx_r]
+                X_csc_r = X_csc[idx_r] if issparse(X) else None
+                X_csr_r = X_csr[idx_r] if issparse(X) else None
                 y_r = y[idx_r]
                 raw_predictions_r = raw_predictions[idx_r]
                 sample_weight_r = sample_weight[idx_r]
+                sample_mask_r = sample_mask[idx_r]
                 # subsampling
                 if do_oob:
-                    sample_mask_r = sample_mask[idx_r]
+                    
                     # OOB score before adding this stage
                     old_oob_score = loss_(y_r[~sample_mask_r],
                                         raw_predictions_r[~sample_mask_r],
@@ -406,7 +409,7 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
             raise ArithmeticError('task_info must be an integer')
         self.task_info = task_info
         
-        X_full = X
+        X_full = X # not_necessary?
         X, t = self._split_task(X_full)
 
         unique = np.unique(t)
@@ -494,6 +497,7 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
             begin_at_stage = self.estimators_.shape[0]
             X = check_array(X, dtype=DTYPE, order="C", accept_sparse='csr')
             raw_predictions = self._raw_predict(X)
+            # ic(raw_predictions)
             self._resize_state()
 
         # fit the boosting stages
@@ -514,13 +518,21 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
     def _raw_predict_init(self, X):
         """Check input and compute raw predictions of the init estimator."""
         self._check_initialized()
-        X = self.estimators_[0, 0]._validate_X_predict(X, check_input=True)
+
+        # separate tasks and data
+        X_full = X
+        X_data, t = self._split_task(X_full)
+        unique = np.unique(t)
+        
+        for r_label in unique:
+            idx_r = (t == r_label)
+            X_data[idx_r] = self.estimators_[0, self.tasks_dic[r_label], 0]._validate_X_predict(X_data[idx_r], check_input=True)
         if self.init_ == 'zero':
             raw_predictions = np.zeros(shape=(X.shape[0], self._loss.K),
                                        dtype=np.float64)
         else:
             raw_predictions = self._loss.get_init_raw_predictions(
-                X, self.init_).astype(np.float64)
+                X_data, self.init_).astype(np.float64)
         return raw_predictions
 
     def _raw_predict(self, X):

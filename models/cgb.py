@@ -2,6 +2,7 @@
 
 from sklearn.ensemble import GradientBoostingClassifier
 from Base._Base import MTCondensedGradientBoosting
+from sklearn.tree._tree import DTYPE, DOUBLE
 
 
 class cgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
@@ -64,6 +65,8 @@ class cgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
 
 class MTcgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
 
+    _SUPPORTED_LOSS = ['log_loss'] # I do not know if this is right
+
     def __init__(self,
                  *,
                  loss='log_loss',
@@ -119,4 +122,34 @@ class MTcgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
             encoded_labels = \
                 self._loss._raw_prediction_to_decision(raw_predictions)
             yield self.classes_.take(encoded_labels, axis=0)
+
+    def decision_function(self, X, task_info=-1):
+        """Compute the decision function of ``X``.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The input samples. Internally, it will be converted to
+            ``dtype=np.float32`` and if a sparse matrix is provided
+            to a sparse ``csr_matrix``.
+
+        Returns
+        -------
+        score : ndarray of shape (n_samples, n_classes) or (n_samples,)
+            The decision function of the input samples, which corresponds to
+            the raw values predicted from the trees of the ensemble . The
+            order of the classes corresponds to that in the attribute
+            :term:`classes_`. Regression and binary classification produce an
+            array of shape (n_samples,).
+        """
+        X_full = X # not_necessary?
+        X, t = self._split_task(X_full)
+
+        X = self._validate_data(
+            X, dtype=DTYPE, order="C", accept_sparse="csr", reset=False
+        )
+        raw_predictions = self._raw_predict(X_full)
+        if raw_predictions.shape[1] == 1:
+            return raw_predictions.ravel()
+        return raw_predictions
 
