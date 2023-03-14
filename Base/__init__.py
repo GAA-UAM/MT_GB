@@ -1,5 +1,6 @@
-from ._Losses import CondensedDeviance
+from ._Losses import CondensedDeviance, MultiOutputLeastSquaresError 
 from ._Base import MTCondensedGradientBoosting
 
 __all__ = ["MTCondensedGradientBoosting",
-           "CondensedDeviance"]
+           "CondensedDeviance",
+           "MultiOutputLeastSquaresError"]

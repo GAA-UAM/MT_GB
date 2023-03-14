@@ -1,7 +1,7 @@
 import numbers
 import numpy as np
 from sklearn.tree import _tree
-from ._Losses import CondensedDeviance
+from ._Losses import CondensedDeviance, MultiOutputLeastSquaresError
 
 from scipy.sparse.csc import csc_matrix
 from scipy.sparse.csr import csr_matrix
@@ -301,7 +301,10 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
         ):
             raise ValueError(f"Loss {self.loss!r} not supported. ")
 
-        loss_class = CondensedDeviance
+        if self.loss == 'log_loss':
+            loss_class = CondensedDeviance
+        else:
+            loss_class = MultiOutputLeastSquaresError
 
         if self.loss == 'log_loss':
             self._loss = loss_class(self.n_classes_)
