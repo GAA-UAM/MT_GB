@@ -45,7 +45,8 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
                  n_iter_no_change=None,
                  tol=0.0001,
                  init=None,
-                 random_state=None):
+                 random_state=None,
+                 n_common_estimators=0):
 
         super().__init__(n_estimators=n_estimators,
                          learning_rate=learning_rate,
@@ -68,6 +69,7 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
                          tol=tol,
                          init=init,
                          random_state=random_state)
+        self.n_common_estimators = n_common_estimators
         
     def _init_state(self):
         """Initialize model state and allocate model state data structures."""
@@ -143,7 +145,10 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
                                          learning_rate=self.learning_rate,
                                          k=k)
 
-            self.estimators_[i, r, k] = tree
+            if i >= self.n_common_estimators:
+                self.estimators_[i, r, k] = tree
+            else:
+                self.estimators_[i, 0, k] = tree # We use the 0-th estimator for all tasks
 
         return raw_predictions
 
@@ -200,27 +205,39 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
             if do_oob:
                 sample_mask = _random_sample_mask(n_samples, n_inbag, # n_samples_r instead of n_samples
                                                 random_state)
-            for r_label, r in self.tasks_dic.items():
-                idx_r = (t == r_label)
-                X_r = X[idx_r]
-                X_csc_r = X_csc[idx_r] if issparse(X) else None
-                X_csr_r = X_csr[idx_r] if issparse(X) else None
-                y_r = y[idx_r]
-                raw_predictions_r = raw_predictions[idx_r]
-                sample_weight_r = sample_weight[idx_r]
-                sample_mask_r = sample_mask[idx_r]
-                # subsampling
-                if do_oob:
-                    
-                    # OOB score before adding this stage
-                    old_oob_score = loss_(y_r[~sample_mask_r],
-                                        raw_predictions_r[~sample_mask_r],
-                                        sample_weight_r[~sample_mask_r])
+            if i >= self.n_common_estimators:
+                for r_label, r in self.tasks_dic.items():
+                    idx_r = (t == r_label)
+                    X_r = X[idx_r]
+                    X_csc_r = X_csc[idx_r] if issparse(X) else None
+                    X_csr_r = X_csr[idx_r] if issparse(X) else None
+                    y_r = y[idx_r]
+                    raw_predictions_r = raw_predictions[idx_r]
+                    sample_weight_r = sample_weight[idx_r]
+                    sample_mask_r = sample_mask[idx_r]
+                    # subsampling
+                    if do_oob:                        
+                        # OOB score before adding this stage
+                        old_oob_score = loss_(y_r[~sample_mask_r],
+                                            raw_predictions_r[~sample_mask_r],
+                                            sample_weight_r[~sample_mask_r])
 
-                # fit next stage of trees
-                raw_predictions[idx_r] = self._fit_stage(i, r, X_r, y_r, raw_predictions_r,
-                                                sample_weight_r, sample_mask_r,
-                                                random_state, X_csc_r, X_csr_r)
+                    # fit next stage of trees
+                    raw_predictions[idx_r] = self._fit_stage(i, r, X_r, y_r, raw_predictions_r,
+                                                    sample_weight_r, sample_mask_r,
+                                                    random_state, X_csc_r, X_csr_r)
+            else:
+                if do_oob:                        
+                    # OOB score before adding this stage
+                    old_oob_score = loss_(y[~sample_mask],
+                                        raw_predictions[~sample_mask],
+                                        sample_weight[~sample_mask])
+
+                    # fit next stage of trees
+                raw_predictions = self._fit_stage(i, None, X, y, raw_predictions,
+                                                sample_weight, sample_mask,
+                                                random_state, X_csc, X_csr)
+            
 
             # track loss
             if do_oob:
@@ -524,9 +541,12 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
         X_data, t = self._split_task(X_full)
         unique = np.unique(t)
         
-        for r_label in unique:
-            idx_r = (t == r_label)
-            X_data[idx_r] = self.estimators_[0, self.tasks_dic[r_label], 0]._validate_X_predict(X_data[idx_r], check_input=True)
+        if self.n_common_estimators > 0:
+            X_data = self.estimators_[0, 0, 0]._validate_X_predict(X_data, check_input=True) # We use the 0-th index (common estim) for the validation
+        else:
+            for r_label in unique:
+                idx_r = (t == r_label)
+                X_data[idx_r] = self.estimators_[0, self.tasks_dic[r_label], 0]._validate_X_predict(X_data[idx_r], check_input=True)
         if self.init_ == 'zero':
             raw_predictions = np.zeros(shape=(X.shape[0], self._loss.K),
                                        dtype=np.float64)
@@ -547,12 +567,17 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
         if raw_predictions.shape[1] == 1:
             raw_predictions = np.squeeze(raw_predictions)        
         for i in range(self.n_estimators):
-            for r_label in unique:
-                if r_label not in self.tasks_dic:
-                    raise ValueError("The task {} was not present in the training set".format(r_label))
-                tree = self.estimators_[i, self.tasks_dic[r_label], 0]
-                idx_r = (t == r_label)
-                raw_predictions[idx_r] += (self.learning_rate * tree.predict(X[idx_r]))
+            if i >= self.n_common_estimators:
+                for r_label in unique:
+                    if r_label not in self.tasks_dic:
+                        raise ValueError("The task {} was not present in the training set".format(r_label))
+                    tree = self.estimators_[i, self.tasks_dic[r_label], 0]
+                    idx_r = (t == r_label)
+                    raw_predictions[idx_r] += (self.learning_rate * tree.predict(X[idx_r]))
+            else:
+                tree = self.estimators_[i, 0, 0] # The common estimator is in the 0-th index
+                raw_predictions += (self.learning_rate * tree.predict(X))
+
         return raw_predictions
 
     def _staged_raw_predict(self, X):
@@ -567,10 +592,15 @@ class MTCondensedGradientBoosting(BaseGradientBoosting):
         if raw_predictions.shape[1] == 1:
             raw_predictions = np.squeeze(raw_predictions)
         for i in range(self.n_estimators):
-            for r_label in unique:
-                if r_label not in self.tasks_dic:
-                    raise ValueError("The task {} was not present in the training set".format(r_label))
-                tree = self.estimators_[i, self.tasks_dic[r_label], 0]
-                idx_r = (t == r_label)
-                raw_predictions[idx_r] += (self.learning_rate * tree.predict(X[idx_r]))
+            if i >= self.n_common_estimators:
+                for r_label in unique:
+                    if r_label not in self.tasks_dic:
+                        raise ValueError("The task {} was not present in the training set".format(r_label))
+                    tree = self.estimators_[i, self.tasks_dic[r_label], 0]
+                    idx_r = (t == r_label)
+                    raw_predictions[idx_r] += (self.learning_rate * tree.predict(X[idx_r]))
+            else:
+                tree = self.estimators_[i, 0, 0] # The common estimator is in the 0-th index
+                raw_predictions += (self.learning_rate * tree.predict(X))
+
         yield raw_predictions.copy()

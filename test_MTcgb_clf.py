@@ -30,7 +30,7 @@ class TestMILSVC(unittest.TestCase):
         arr = np.arange(self.X.shape[0])
         np.random.shuffle(arr)
         rnd_idx = arr[:]
-        model = MTcgb_clf()
+        model = MTcgb_clf(n_common_estimators=3)
         model.fit(self.X[rnd_idx], self.y[rnd_idx])
         pred = model.predict(self.X)
         score_train = f1_score(self.y, pred)

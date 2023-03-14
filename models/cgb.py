@@ -88,7 +88,8 @@ class MTcgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
                  validation_fraction=0.1,
                  n_iter_no_change=None,
                  tol=1e-4,
-                 ccp_alpha=0.0):
+                 ccp_alpha=0.0,
+                 n_common_estimators=0):
 
         super().__init__(loss=loss,
                          learning_rate=learning_rate,
@@ -110,6 +111,7 @@ class MTcgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
                          n_iter_no_change=n_iter_no_change,
                          tol=tol,
                          ccp_alpha=ccp_alpha)
+        self.n_common_estimators = n_common_estimators
 
     def predict(self, X):
         raw_predictions = self.decision_function(X)
