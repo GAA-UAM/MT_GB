@@ -8,8 +8,6 @@ import numpy as np
 
 class MTcgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
 
-    _SUPPORTED_LOSS = ['log_loss'] # I do not know if this is right
-
     def __init__(self,
                  *,
                  loss='log_loss',
