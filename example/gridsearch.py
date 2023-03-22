@@ -40,10 +40,9 @@ def gridsearch(X,
 
         bestparams.append(grid.best_params_)
 
-        grid.cv_results_[
-            'final_test_error'] = grid.score(x_test, y_test)
+        grid.cv_results_['final_test_error'] = grid.score(x_test, y_test)
 
-    cv_results.append(grid.cv_results_)
+        cv_results.append(grid.cv_results_)
 
     results = {}
     results['Metric'] = [scoring]
