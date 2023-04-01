@@ -1,26 +1,27 @@
-import numbers
+from numbers import Integral
 import numpy as np
 from sklearn.tree import _tree
-from ._Losses import CondensedDeviance
+from ._Losses import CondensedDeviance, MultiOutputLeastSquaresError
 
 from scipy.sparse.csc import csc_matrix
 from scipy.sparse.csr import csr_matrix
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.ensemble._gb import BaseGradientBoosting, VerboseReporter
-from sklearn.ensemble import _gradient_boosting, _gb_losses
+from sklearn.ensemble import _gradient_boosting
 
 from scipy.sparse.base import issparse
 from sklearn.utils.multiclass import type_of_target
 from sklearn.base import BaseEstimator, is_classifier
 from sklearn.model_selection._split import train_test_split
 from sklearn.utils.validation import check_array, check_random_state, column_or_1d, _check_sample_weight
-from sklearn.utils import check_scalar
+
+from icecream import ic
 
 DTYPE = _tree.DTYPE
 
-
-class CondensedGradientBoosting(BaseGradientBoosting):
+            
+class MTCondensedGradientBoosting(BaseGradientBoosting):
 
     def __init__(self,
                  n_estimators=100,
@@ -43,7 +44,8 @@ class CondensedGradientBoosting(BaseGradientBoosting):
                  n_iter_no_change=None,
                  tol=0.0001,
                  init=None,
-                 random_state=None):
+                 random_state=None,
+                 n_common_estimators=0):
 
         super().__init__(n_estimators=n_estimators,
                          learning_rate=learning_rate,
@@ -66,9 +68,24 @@ class CondensedGradientBoosting(BaseGradientBoosting):
                          tol=tol,
                          init=init,
                          random_state=random_state)
+        self.n_common_estimators = n_common_estimators
+        
+    def _init_state(self):
+        """Initialize model state and allocate model state data structures."""
+
+        self.init_ = self.init
+        if self.init_ is None:
+            self.init_ = self._loss.init_estimator()
+
+        self.estimators_ = np.empty((self.n_estimators, self.T, self._loss.K), dtype=object)
+        self.train_score_ = np.zeros((self.n_estimators,), dtype=np.float64)
+        # do oob?
+        if self.subsample < 1.0:
+            self.oob_improvement_ = np.zeros((self.n_estimators), dtype=np.float64)
 
     def _fit_stage(self,
                    i,
+                   r, # task
                    X,
                    y,
                    raw_predictions,
@@ -78,7 +95,7 @@ class CondensedGradientBoosting(BaseGradientBoosting):
                    X_csc=None,
                    X_csr=None):
 
-        assert sample_mask.dtype == np.bool
+        assert sample_mask.dtype == bool
         loss = self._loss
 
         original_y = y
@@ -127,12 +144,16 @@ class CondensedGradientBoosting(BaseGradientBoosting):
                                          learning_rate=self.learning_rate,
                                          k=k)
 
-            self.estimators_[i, k] = tree
+            if i >= self.n_common_estimators:
+                self.estimators_[i, r, k] = tree
+            else:
+                self.estimators_[i, 0, k] = tree # We use the 0-th estimator for all tasks
 
         return raw_predictions
 
     def _fit_stages(self,
                     X,
+                    t,
                     y,
                     raw_predictions,
                     sample_weight,
@@ -150,7 +171,7 @@ class CondensedGradientBoosting(BaseGradientBoosting):
         """
         n_samples = X.shape[0]
         do_oob = self.subsample < 1.0
-        sample_mask = np.ones((n_samples, ), dtype=np.bool)
+        sample_mask = np.ones((n_samples, ), dtype=bool)
         n_inbag = max(1, int(self.subsample * n_samples))
         loss_ = self._loss
 
@@ -180,30 +201,52 @@ class CondensedGradientBoosting(BaseGradientBoosting):
         i = begin_at_stage
         _random_sample_mask = _gradient_boosting._random_sample_mask
         for i in range(begin_at_stage, self.n_estimators):
-
-            # subsampling
             if do_oob:
-                sample_mask = _random_sample_mask(n_samples, n_inbag,
-                                                  random_state)
-                # OOB score before adding this stage
-                old_oob_score = loss_(y[~sample_mask],
-                                      raw_predictions[~sample_mask],
-                                      sample_weight[~sample_mask])
+                sample_mask = _random_sample_mask(n_samples, n_inbag, # n_samples_r instead of n_samples
+                                                random_state)
+            if i >= self.n_common_estimators:
+                for r_label, r in self.tasks_dic.items():
+                    idx_r = (t == r_label)
+                    X_r = X[idx_r]
+                    X_csc_r = X_csc[idx_r] if issparse(X) else None
+                    X_csr_r = X_csr[idx_r] if issparse(X) else None
+                    y_r = y[idx_r]
+                    raw_predictions_r = raw_predictions[idx_r]
+                    sample_weight_r = sample_weight[idx_r]
+                    sample_mask_r = sample_mask[idx_r]
+                    # subsampling
+                    if do_oob:                        
+                        # OOB score before adding this stage
+                        old_oob_score = loss_(y_r[~sample_mask_r],
+                                            raw_predictions_r[~sample_mask_r],
+                                            sample_weight_r[~sample_mask_r])
 
-            # fit next stage of trees
-            raw_predictions = self._fit_stage(i, X, y, raw_predictions,
-                                              sample_weight, sample_mask,
-                                              random_state, X_csc, X_csr)
+                    # fit next stage of trees
+                    raw_predictions[idx_r] = self._fit_stage(i, r, X_r, y_r, raw_predictions_r,
+                                                    sample_weight_r, sample_mask_r,
+                                                    random_state, X_csc_r, X_csr_r)
+            else:
+                if do_oob:                        
+                    # OOB score before adding this stage
+                    old_oob_score = loss_(y[~sample_mask],
+                                        raw_predictions[~sample_mask],
+                                        sample_weight[~sample_mask])
+
+                    # fit next stage of trees
+                raw_predictions = self._fit_stage(i, None, X, y, raw_predictions,
+                                                sample_weight, sample_mask,
+                                                random_state, X_csc, X_csr)
+            
 
             # track loss
             if do_oob:
                 self.train_score_[i] = loss_(y[sample_mask],
-                                             raw_predictions[sample_mask],
-                                             sample_weight[sample_mask])
+                                            raw_predictions[sample_mask],
+                                            sample_weight[sample_mask])
                 self.oob_improvement_[i] = (
                     old_oob_score -
                     loss_(y[~sample_mask], raw_predictions[~sample_mask],
-                          sample_weight[~sample_mask]))
+                        sample_weight[~sample_mask]))
             else:
                 # no need to fancy index w/ no subsampling
                 self.train_score_[i] = loss_(y, raw_predictions, sample_weight)
@@ -234,30 +277,11 @@ class CondensedGradientBoosting(BaseGradientBoosting):
         return i + 1
 
     def _check_params(self):
-        """Check validity of parameters and raise ValueError if not valid."""
-        check_scalar(
-            self.learning_rate,
-            name="learning_rate",
-            target_type=numbers.Real,
-            min_val=0.0,
-            include_boundaries="neither",
-        )
 
-        check_scalar(
-            self.n_estimators,
-            name="n_estimators",
-            target_type=numbers.Integral,
-            min_val=1,
-            include_boundaries="left",
-        )
-
-        if (
-            self.loss not in self._SUPPORTED_LOSS
-            or self.loss not in _gb_losses.LOSS_FUNCTIONS
-        ):
-            raise ValueError(f"Loss {self.loss!r} not supported. ")
-
-        loss_class = CondensedDeviance
+        if self.loss == 'log_loss':
+            loss_class = CondensedDeviance
+        else:
+            loss_class = MultiOutputLeastSquaresError
 
         if self.loss == 'log_loss':
             self._loss = loss_class(self.n_classes_)
@@ -265,34 +289,6 @@ class CondensedGradientBoosting(BaseGradientBoosting):
             self._loss = loss_class(self.alpha)
         else:
             self._loss = loss_class()
-
-        check_scalar(
-            self.subsample,
-            name="subsample",
-            target_type=numbers.Real,
-            min_val=0.0,
-            max_val=1.0,
-            include_boundaries="right",
-        )
-
-        if self.init is not None:
-            # init must be an estimator or 'zero'
-            if isinstance(self.init, BaseEstimator):
-                self._loss.check_init_estimator(self.init)
-            elif not (isinstance(self.init, str) and self.init == "zero"):
-                raise ValueError(
-                    "The init parameter must be an estimator or 'zero'. "
-                    f"Got init={self.init!r}"
-                )
-
-        check_scalar(
-            self.alpha,
-            name="alpha",
-            target_type=numbers.Real,
-            min_val=0.0,
-            max_val=1.0,
-            include_boundaries="neither",
-        )
 
         if isinstance(self.max_features, str):
             if self.max_features == "auto":
@@ -302,76 +298,41 @@ class CondensedGradientBoosting(BaseGradientBoosting):
                     max_features = self.n_features_in_
             elif self.max_features == "sqrt":
                 max_features = max(1, int(np.sqrt(self.n_features_in_)))
-            elif self.max_features == "log2":
+            else:  # self.max_features == "log2"
                 max_features = max(1, int(np.log2(self.n_features_in_)))
-            else:
-                raise ValueError(
-                    f"Invalid value for max_features: {self.max_features!r}. "
-                    "Allowed string values are 'auto', 'sqrt' or 'log2'."
-                )
-
         elif self.max_features is None:
             max_features = self.n_features_in_
-        elif isinstance(self.max_features, numbers.Integral):
-            check_scalar(
-                self.max_features,
-                name="max_features",
-                target_type=numbers.Integral,
-                min_val=1,
-                include_boundaries="left",
-            )
+        elif isinstance(self.max_features, Integral):
             max_features = self.max_features
         else:  # float
-            check_scalar(
-                self.max_features,
-                name="max_features",
-                target_type=numbers.Real,
-                min_val=0.0,
-                max_val=1.0,
-                include_boundaries="right",
-            )
             max_features = max(1, int(self.max_features * self.n_features_in_))
 
         self.max_features_ = max_features
 
-        check_scalar(
-            self.verbose,
-            name="verbose",
-            target_type=(numbers.Integral, np.bool_),
-            min_val=0,
-        )
 
-        check_scalar(
-            self.validation_fraction,
-            name="validation_fraction",
-            target_type=numbers.Real,
-            min_val=0.0,
-            max_val=1.0,
-            include_boundaries="neither",
-        )
+    def _split_task(self, X):
+        X_task = X[:, self.task_info]
+        X_data = np.delete(X, self.task_info, axis=1).astype(float)
+        return X_data, X_task
 
-        if self.n_iter_no_change is not None:
-            check_scalar(
-                self.n_iter_no_change,
-                name="n_iter_no_change",
-                target_type=numbers.Integral,
-                min_val=1,
-                include_boundaries="left",
-            )
-
-        check_scalar(
-            self.tol,
-            name="tol",
-            target_type=numbers.Real,
-            min_val=0.0,
-            include_boundaries="neither",
-        )
-
-    def fit(self, X, y, sample_weight=None, monitor=None):
+    def fit(self, X, y, sample_weight=None, monitor=None, task_info=-1):
 
         if not self.warm_start:
             self._clear_state()
+        
+        # Separate the task information from the data
+        if not isinstance(task_info, int):
+            raise ArithmeticError('task_info must be an integer')
+        self.task_info = task_info
+        
+        X_full = X # not_necessary?
+        X, t = self._split_task(X_full)
 
+        unique = np.unique(t)
+        self.T = len(unique)
+        self.tasks_dic = dict(zip(unique, range(self.T)))
+        
+        # validate data
         X, y = self._validate_data(X,
                                    y,
                                    accept_sparse=['csr', 'csc', 'coo'],
@@ -452,10 +413,11 @@ class CondensedGradientBoosting(BaseGradientBoosting):
             begin_at_stage = self.estimators_.shape[0]
             X = check_array(X, dtype=DTYPE, order="C", accept_sparse='csr')
             raw_predictions = self._raw_predict(X)
+            # ic(raw_predictions)
             self._resize_state()
 
         # fit the boosting stages
-        n_stages = self._fit_stages(X, y, raw_predictions, sample_weight,
+        n_stages = self._fit_stages(X, t, y, raw_predictions, sample_weight,
                                     self._rng, X_val, y_val, sample_weight_val,
                                     begin_at_stage, monitor)
 
@@ -472,31 +434,72 @@ class CondensedGradientBoosting(BaseGradientBoosting):
     def _raw_predict_init(self, X):
         """Check input and compute raw predictions of the init estimator."""
         self._check_initialized()
-        X = self.estimators_[0, 0]._validate_X_predict(X, check_input=True)
+
+        # separate tasks and data
+        X_full = X
+        X_data, t = self._split_task(X_full)
+        unique = np.unique(t)
+        
+        if self.n_common_estimators > 0:
+            X_data = self.estimators_[0, 0, 0]._validate_X_predict(X_data, check_input=True) # We use the 0-th index (common estim) for the validation
+        else:
+            for r_label in unique:
+                idx_r = (t == r_label)
+                X_data[idx_r] = self.estimators_[0, self.tasks_dic[r_label], 0]._validate_X_predict(X_data[idx_r], check_input=True)
         if self.init_ == 'zero':
             raw_predictions = np.zeros(shape=(X.shape[0], self._loss.K),
                                        dtype=np.float64)
         else:
             raw_predictions = self._loss.get_init_raw_predictions(
-                X, self.init_).astype(np.float64)
+                X_data, self.init_).astype(np.float64)
         return raw_predictions
 
     def _raw_predict(self, X):
         """Return the sum of the trees raw predictions (+ init estimator)."""
-        raw_predictions = self._raw_predict_init(X)
+        raw_predictions = self._raw_predict_init(X) # init is common for all tasks
+
+        # separate tasks and data
+        X_full = X
+        X, t = self._split_task(X_full)
+        unique = np.unique(t)
+
         if raw_predictions.shape[1] == 1:
-            raw_predictions = np.squeeze(raw_predictions)
+            raw_predictions = np.squeeze(raw_predictions)        
         for i in range(self.n_estimators):
-            tree = self.estimators_[i, 0]
-            raw_predictions += (self.learning_rate * tree.predict(X))
+            if i >= self.n_common_estimators:
+                for r_label in unique:
+                    if r_label not in self.tasks_dic:
+                        raise ValueError("The task {} was not present in the training set".format(r_label))
+                    tree = self.estimators_[i, self.tasks_dic[r_label], 0]
+                    idx_r = (t == r_label)
+                    raw_predictions[idx_r] += (self.learning_rate * tree.predict(X[idx_r]))
+            else:
+                tree = self.estimators_[i, 0, 0] # The common estimator is in the 0-th index
+                raw_predictions += (self.learning_rate * tree.predict(X))
+
         return raw_predictions
 
     def _staged_raw_predict(self, X):
         X = check_array(X, dtype=DTYPE, order="C", accept_sparse='csr')
-        raw_predictions = self._raw_predict_init(X)
+        raw_predictions = self._raw_predict_init(X) # init is common for all tasks
+
+        # separate tasks and data
+        X_full = X
+        X, t = self._split_task(X_full)
+        unique = np.unique(t)
+
         if raw_predictions.shape[1] == 1:
             raw_predictions = np.squeeze(raw_predictions)
         for i in range(self.n_estimators):
-            tree = self.estimators_[i, 0]
-            raw_predictions += (self.learning_rate * tree.predict(X))
-            yield raw_predictions.copy()
+            if i >= self.n_common_estimators:
+                for r_label in unique:
+                    if r_label not in self.tasks_dic:
+                        raise ValueError("The task {} was not present in the training set".format(r_label))
+                    tree = self.estimators_[i, self.tasks_dic[r_label], 0]
+                    idx_r = (t == r_label)
+                    raw_predictions[idx_r] += (self.learning_rate * tree.predict(X[idx_r]))
+            else:
+                tree = self.estimators_[i, 0, 0] # The common estimator is in the 0-th index
+                raw_predictions += (self.learning_rate * tree.predict(X))
+
+        yield raw_predictions.copy()
