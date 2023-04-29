@@ -54,10 +54,6 @@ class XGBoost():
             setattr(self, key, params[key])
         return self
         
-
-    
-
-    
     def regularization(self):
         """Return the penalty for all trees built so far.
         \f$\gamma\f$ penalizes the number of leaves and
