@@ -155,3 +155,11 @@ class MultiOutputLeastSquaresError(_gb_losses.RegressionLossFunction):
     def _update_terminal_region(self, tree, terminal_regions, leaf, X, y,
                                 residual, raw_predictions, sample_weight):
         pass
+
+
+class XGBoost_Loss():
+     
+    def squareloss(self, y, y_hat):
+        """Return the squared loss wo/ penalty / regularization.
+        """
+        return np.sum(np.square(y_hat-y))
