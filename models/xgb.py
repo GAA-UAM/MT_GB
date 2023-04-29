@@ -19,6 +19,7 @@ class MTXGBoostClassifier(XGBoost):
                  random_state=None,
                  verbose=0,
                  nthread=1):
+        
         super().__init__(loss_function,
                          n_estimators,
                          min_samples_split,
@@ -68,7 +69,7 @@ class MTXGBoostRegreesor(XGBoost):
                          random_state,
                          verbose,
                          nthread)
-    
+
     def predict(self, X):
         pred = np.zeros(X.shape[0], dtype=float)
         if not self.trees:
@@ -76,5 +77,5 @@ class MTXGBoostRegreesor(XGBoost):
         for t in range(len(self.trees)-1):
             pred += self.learning_rate*self.trees[t].predict(X)
         pred += self.trees[-1].predict(X)
-        
+
         return pred

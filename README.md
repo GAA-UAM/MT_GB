@@ -1,2 +1,3 @@
-# MT-C-GB
-Multi Task-Condensed Gradient Boosting
+# MT-GB
+
+Multi Task-Gradient Boosting

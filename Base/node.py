@@ -87,9 +87,9 @@ class node:
             return y
 
     def find_best_split(self, X, g, h, lbda, gamma, max_samples_linear_model, min_samples_leaf):
-        assert X.shape[0] == len(g)
-        assert len(h) == len(g)
-        assert self.split_feature == -1
+        # assert X.shape[0] == len(g)
+        # assert len(h) == len(g)
+        # assert self.split_feature == -1
 
         n, d = X.shape
         self.gain = float("-inf")
@@ -172,4 +172,4 @@ class node:
             w = -g_tilde/H_tilde
             obj = 0.5*g_tilde*w
 
-        return w,
+        return w, obj

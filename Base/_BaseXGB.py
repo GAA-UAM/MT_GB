@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-from node import node
+from .node import node
 from ._Losses import XGBoost_Loss
 
 class XGBoost():
@@ -70,11 +70,19 @@ class XGBoost():
             reg += tree.regularization(gamma=self.gamma, lbda=self.lbda)
 
         return reg
+    
+    def _predict(self, X):
+        n = X.shape[0]
+        y = np.zeros(n, dtype=float)
+        for tree in self.trees:
+            y += self.learning_rate*tree.predict(X)
+
+        return y
 
     def objective(self,X, y, y_hat=None):
         if y_hat is None:
             y_hat = self._predict(X)
-        return self.loss_func(y,y_hat)+self.regularization()
+        return self.loss_function.squareloss(y,y_hat)+self.regularization()
 
     def build_tree(self, tree, X, g, h):
 
@@ -147,8 +155,8 @@ class XGBoost():
             batch_size = int(np.rint(self.subsample*n))
             indices = np.random.choice(n, batch_size, replace=False)
             y_hat = self._predict(X[indices,:])
-            g = self.dloss_func(X[indices,:],y[indices],y_hat)
-            h = self.ddloss_func(X[indices,:],y[indices],y_hat)
+            g = self.loss_function.squareloss(y[indices],y_hat)
+            h = self.loss_function.squareloss(y[indices],y_hat)
             if self.verbose > 0:
                 print( "building tree {}, total obj={}".format(t+1,np.sum(self.tree_objs)) )
             tree = self.build_tree( node(verbose=self.verbose), X[indices,:], g, h )
@@ -222,7 +230,7 @@ class XGBoost():
 
 
         if self.loss_function == "squared_error":
-            self.loss_function = XGBoost_Loss.squareloss
+            self.loss_function = XGBoost_Loss()
 
 
    
