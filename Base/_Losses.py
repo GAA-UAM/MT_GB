@@ -157,9 +157,3 @@ class MultiOutputLeastSquaresError(_gb_losses.RegressionLossFunction):
         pass
 
 
-class XGBoost_Loss():
-     
-    def squareloss(self, y, y_hat):
-        """Return the squared loss wo/ penalty / regularization.
-        """
-        return np.sum(np.square(y_hat-y))
