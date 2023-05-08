@@ -1,7 +1,3 @@
-from .cgb import MTcgb_clf, MTcgbcgb_reg
-from .xgb import MTXGBoostRegreesor, MTXGBoostClassifier
+from .cgb import MTGBClassifier, MTGBRegressor
 
-__all__ = ["MTcgb_clf", 
-           "MTcgbcgb_reg",  
-           "MTXGBoostRegreesor", 
-           "MTXGBoostClassifier"]
+__all__ = ["MTGBClassifier", "MTGBRegressor"]

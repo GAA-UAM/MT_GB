@@ -1,3 +1,10 @@
+""" Multi-Task Gradient Boosting - Loss class """
+
+# Author: Carlos Ruiz Pastor
+# Author: Seyedsaman Emami 
+# Author: Gonzalo Martínez-Muñoz 
+
+# Licence: GNU Lesser General Public License v2.1 (LGPL-2.1)
 
 import numpy as np
 from sklearn.tree import _tree
@@ -11,7 +18,7 @@ TREE_LEAF = _tree.TREE_LEAF
 DTYPE = _tree.DTYPE
 
 
-class CondensedDeviance(_gb_losses.ClassificationLossFunction):
+class Deviance(_gb_losses.ClassificationLossFunction):
     def __init__(self, n_classes_):
         self.K = 1
         self.n_classes_ = n_classes_
@@ -155,5 +162,3 @@ class MultiOutputLeastSquaresError(_gb_losses.RegressionLossFunction):
     def _update_terminal_region(self, tree, terminal_regions, leaf, X, y,
                                 residual, raw_predictions, sample_weight):
         pass
-
-

@@ -1,12 +1,12 @@
 # Licence: GNU Lesser General Public License v2.1 (LGPL-2.1)
 
 from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
-from Base._Base import MTCondensedGradientBoosting
+from Base._Base import BaseMTGB
 from sklearn.tree._tree import DTYPE, DOUBLE
 from sklearn.utils.validation import check_array
 import numpy as np
 
-class MTcgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
+class MTGBClassifier(GradientBoostingClassifier, BaseMTGB):
 
     def __init__(self,
                  *,
@@ -97,7 +97,7 @@ class MTcgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
         return raw_predictions
 
 
-class MTcgbcgb_reg(GradientBoostingRegressor, MTCondensedGradientBoosting):
+class MTGBRegressor(GradientBoostingRegressor, BaseMTGB):
 
     def __init__(self,
                  *,
