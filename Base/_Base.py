@@ -16,12 +16,11 @@ from sklearn.base import BaseEstimator, is_classifier
 from sklearn.model_selection._split import train_test_split
 from sklearn.utils.validation import check_array, check_random_state, column_or_1d, _check_sample_weight
 
-from icecream import ic
 
 DTYPE = _tree.DTYPE
 
             
-class MTCondensedGradientBoosting(BaseGradientBoosting):
+class BaseMTGB(BaseGradientBoosting):
 
     def __init__(self,
                  n_estimators=100,
