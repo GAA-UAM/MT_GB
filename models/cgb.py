@@ -2,7 +2,7 @@
 
 from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
 from Base._Base import BaseMTGB
-from sklearn.tree._tree import DTYPE, DOUBLE
+from sklearn.tree._tree import DTYPE
 from sklearn.utils.validation import check_array
 import numpy as np
 
