@@ -21,7 +21,7 @@ from sklearn.ensemble import _gradient_boosting
 
 from scipy.sparse.base import issparse
 from sklearn.utils.multiclass import type_of_target
-from sklearn.base import BaseEstimator, is_classifier
+from sklearn.base import is_classifier
 from sklearn.model_selection._split import train_test_split
 from sklearn.utils.validation import check_array, check_random_state, column_or_1d, _check_sample_weight
 
