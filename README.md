@@ -2,6 +2,9 @@
 
 This repository contains the code and implementation for the paper "Multi-Task Gradient Boosting".
 
+[![license](https://img.shields.io/travis/username/repo.svg)]([https://travis-ci.org/username/repo](https://github.com/GAA-UAM/MT_GB/blob/main/LICENSE))
+
+
 # License
 The package is licensed under the GNU Lesser General Public License v2.1.
 
@@ -11,6 +14,14 @@ The package is licensed under the GNU Lesser General Public License v2.1.
 The code for the proposed algorithm is available in this repository for multi-task regression and classification problems. The code is implemented in Python and uses the scikit-learn library.
 
 To run the code, clone this repository and install the necessary libraries. Then, run the `mtgb.py` file to train and test the multi-task gradient boosting algorithm on the provided datasets.
+
+## Documentationd 
+To get started with this project, please refer to the [Wiki](https://github.com/GAA-UAM/MT_GB/wiki)."
+
+
+
+
+
 
 
 
