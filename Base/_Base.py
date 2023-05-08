@@ -1,7 +1,16 @@
+""" Multi-Task Gradient Boosting - Base class """
+
+# Author: Carlos Ruiz Pastor
+# Author: Seyedsaman Emami
+# Author: Gonzalo Martínez-Muñoz
+
+# Licence: GNU Lesser General Public License v2.1 (LGPL-2.1)
+
+
 from numbers import Integral
 import numpy as np
 from sklearn.tree import _tree
-from ._Losses import CondensedDeviance, MultiOutputLeastSquaresError
+from ._Losses import Deviance, MultiOutputLeastSquaresError
 
 from scipy.sparse.csc import csc_matrix
 from scipy.sparse.csr import csr_matrix
@@ -12,14 +21,14 @@ from sklearn.ensemble import _gradient_boosting
 
 from scipy.sparse.base import issparse
 from sklearn.utils.multiclass import type_of_target
-from sklearn.base import BaseEstimator, is_classifier
+from sklearn.base import is_classifier
 from sklearn.model_selection._split import train_test_split
 from sklearn.utils.validation import check_array, check_random_state, column_or_1d, _check_sample_weight
 
 
 DTYPE = _tree.DTYPE
 
-            
+
 class BaseMTGB(BaseGradientBoosting):
 
     def __init__(self,
