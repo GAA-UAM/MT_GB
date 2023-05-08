@@ -6,7 +6,7 @@ from sklearn.tree._tree import DTYPE, DOUBLE
 from sklearn.utils.validation import check_array
 import numpy as np
 
-class MTcgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
+class MTGBClassifier(GradientBoostingClassifier, MTCondensedGradientBoosting):
 
     def __init__(self,
                  *,
@@ -97,7 +97,7 @@ class MTcgb_clf(GradientBoostingClassifier, MTCondensedGradientBoosting):
         return raw_predictions
 
 
-class MTcgbcgb_reg(GradientBoostingRegressor, MTCondensedGradientBoosting):
+class MTGBRegressor(GradientBoostingRegressor, MTCondensedGradientBoosting):
 
     def __init__(self,
                  *,
