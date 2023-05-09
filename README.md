@@ -1,6 +1,6 @@
 # Multi-Task Gradient Boosting
 
-This repository contains the code and implementation for the paper "Multi-Task Gradient Boosting".
+The code and implementation for "Multi-Task Gradient Boosting" paper, as well as the datasets utilized, are housed in this repository.
 
 The provided algorithm contains an implementation of the Multi-Task Gradient Boosting (MT-GB) algorithm, which extends the popular Gradient Boosting method for both classification and regression problems.
 
