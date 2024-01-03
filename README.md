@@ -7,6 +7,13 @@ The provided algorithm contains an implementation of the Multi-Task Gradient Boo
 # License
 The package is licensed under the GNU Lesser General Public License v2.1.
 
+# Citation 
+
+When utilizing this package, kindly acknowledge it by citing as indicated below or employing the BibTeX format provided [here](citation.bib).
+
+```yml
+Emami, S., Ruiz Pastor, C., Martínez-Muñoz, G. (2023). Multi-Task Gradient Boosting. In: García Bringas, P., et al. Hybrid Artificial Intelligent Systems. HAIS 2023. Lecture Notes in Computer Science(), vol 14001. Springer, Cham. https://doi.org/10.1007/978-3-031-40725-3_9
+```
 
 # Usage
 
