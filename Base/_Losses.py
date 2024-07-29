@@ -1,8 +1,8 @@
 """ Multi-Task Gradient Boosting - Loss class """
 
 # Author: Carlos Ruiz Pastor
-# Author: Seyedsaman Emami 
-# Author: Gonzalo Martínez-Muñoz 
+# Author: Seyedsaman Emami
+# Author: Gonzalo Martínez-Muñoz
 
 # Licence: GNU Lesser General Public License v2.1 (LGPL-2.1)
 
@@ -29,20 +29,23 @@ class Deviance(_gb_losses.ClassificationLossFunction):
 
     def __call__(self, y, raw_predictions, sample_weight=None):
 
-        return np.average(-1 * (y * raw_predictions).sum(axis=1) +
-                          logsumexp(raw_predictions, axis=1),
-                          weights=sample_weight)
+        return np.average(
+            -1 * (y * raw_predictions).sum(axis=1) + logsumexp(raw_predictions, axis=1),
+            weights=sample_weight,
+        )
 
-    def update_terminal_regions(self,
-                                tree,
-                                X,
-                                y,
-                                residual,
-                                raw_predictions,
-                                sample_weight,
-                                sample_mask,
-                                learning_rate,
-                                k=0):
+    def update_terminal_regions(
+        self,
+        tree,
+        X,
+        y,
+        residual,
+        raw_predictions,
+        sample_weight,
+        sample_mask,
+        learning_rate,
+        k=0,
+    ):
 
         terminal_regions = tree.apply(X)
 
@@ -50,19 +53,26 @@ class Deviance(_gb_losses.ClassificationLossFunction):
         masked_terminal_regions[~sample_mask] = -1
 
         for leaf in np.where(tree.children_left == TREE_LEAF)[0]:
-            self._update_terminal_region(tree, masked_terminal_regions, leaf,
-                                         X, y, residual, raw_predictions,
-                                         sample_weight)
+            self._update_terminal_region(
+                tree,
+                masked_terminal_regions,
+                leaf,
+                X,
+                y,
+                residual,
+                raw_predictions,
+                sample_weight,
+            )
 
-        raw_predictions[:, :] += \
-            (learning_rate * tree.value[:, :, 0]
-             ).take(terminal_regions, axis=0)
+        raw_predictions[:, :] += (learning_rate * tree.value[:, :, 0]).take(
+            terminal_regions, axis=0
+        )
 
     def negative_gradient(self, y, raw_predictions, k=0, **kwargs):
 
         return y - np.nan_to_num(
-            np.exp(raw_predictions -
-                   logsumexp(raw_predictions, axis=1, keepdims=True)))
+            np.exp(raw_predictions - logsumexp(raw_predictions, axis=1, keepdims=True))
+        )
 
     def _update_terminal_region(
         self,
@@ -83,16 +93,19 @@ class Deviance(_gb_losses.ClassificationLossFunction):
         sample_weight = sample_weight[:, np.newaxis]
         numerator = np.sum(sample_weight * residual, axis=0)
         numerator *= (n_classes - 1) / n_classes
-        denominator = np.sum(sample_weight * (y - residual) *
-                             (1 - y + residual),
-                             axis=0)
+        denominator = np.sum(
+            sample_weight * (y - residual) * (1 - y + residual), axis=0
+        )
         tree.value[leaf, :, 0] = np.where(
-            abs(denominator) < 1e-150, 0.0, numerator / denominator)
+            abs(denominator) < 1e-150, 0.0, numerator / denominator
+        )
 
     def _raw_prediction_to_proba(self, raw_predictions):
         return np.nan_to_num(
-            np.exp(raw_predictions -
-                   (logsumexp(raw_predictions, axis=1)[:, np.newaxis])))
+            np.exp(
+                raw_predictions - (logsumexp(raw_predictions, axis=1)[:, np.newaxis])
+            )
+        )
 
     def _raw_prediction_to_decision(self, raw_predictions):
         proba = self._raw_prediction_to_proba(raw_predictions)
@@ -108,57 +121,78 @@ class Deviance(_gb_losses.ClassificationLossFunction):
 
 class MultiOutputLeastSquaresError(_gb_losses.RegressionLossFunction):
     def init_estimator(self):
-        return DummyRegressor(strategy='mean')
+        return DummyRegressor(strategy="mean")
 
     def get_init_raw_predictions(self, X, estimator):
         predictions = estimator.predict(X)
-        if type_of_target(predictions) == 'continuous-multioutput' or 'multiclass-multioutput':
+        target_type = type_of_target(predictions)
+        if target_type in ["continuous-multioutput", "multiclass-multioutput"]:
             predictions = predictions.reshape(-1, predictions.shape[1]).astype(
-                np.float64)
-        else:
+                np.float64
+            )
+        elif target_type == "continuous":
             predictions = predictions.reshape(-1, 1).astype(np.float64)
         return predictions
 
     def __call__(self, y, raw_predictions, sample_weight=None):
 
         if sample_weight is None:
-            init = np.mean((y - raw_predictions.ravel())**2)
+            init = np.mean((y - raw_predictions.ravel()) ** 2)
         else:
-            if type_of_target(raw_predictions) == 'continuous-multioutput' or 'multiclass-multioutput':
-                init = (1 / sample_weight.sum() *
-                        np.sum(sample_weight[:, None] *
-                               ((y - raw_predictions)**2)))
+            if (
+                type_of_target(raw_predictions) == "continuous-multioutput"
+                or "multiclass-multioutput"
+            ):
+                init = (
+                    1
+                    / sample_weight.sum()
+                    * np.sum(sample_weight[:, None] * ((y - raw_predictions) ** 2))
+                )
             else:
-                init = (1 / sample_weight.sum() *
-                        np.sum(sample_weight *
-                               ((y - raw_predictions.ravel())**2)))
+                init = (
+                    1
+                    / sample_weight.sum()
+                    * np.sum(sample_weight * ((y - raw_predictions.ravel()) ** 2))
+                )
 
         return init
 
     def negative_gradient(self, y, raw_predictions, **kargs):
-        if type_of_target(y) == 'continuous-multioutput' or 'multiclass-multioutput':
+        target_type = type_of_target(y)
+        if target_type in ["continuous-multioutput", "multiclass-multioutput"]:
             negative_gradient = np.squeeze(y) - raw_predictions
-        else:
+        elif target_type == "continuous":
             negative_gradient = np.squeeze(y) - raw_predictions.ravel()
         return negative_gradient
 
-    def update_terminal_regions(self,
-                                tree,
-                                X,
-                                y,
-                                residual,
-                                raw_predictions,
-                                sample_weight,
-                                sample_mask,
-                                learning_rate=0.1,
-                                k=0):
-        if type_of_target(y) == 'continuous-multioutput' or 'multiclass-multioutput':
+    def update_terminal_regions(
+        self,
+        tree,
+        X,
+        y,
+        residual,
+        raw_predictions,
+        sample_weight,
+        sample_mask,
+        learning_rate=0.1,
+        k=0,
+    ):
+        target_type = type_of_target(y)
+        if target_type in ["continuous-multioutput", "multiclass-multioutput"]:
             for i in range(y.shape[1]):
-                raw_predictions[:, i] += learning_rate * \
-                    tree.predict(X)[:, i, 0]
+                raw_predictions[:, i] += learning_rate * tree.predict(X)[:, i, 0]
         else:
             raw_predictions[:, k] += learning_rate * tree.predict(X).ravel()
 
-    def _update_terminal_region(self, tree, terminal_regions, leaf, X, y,
-                                residual, raw_predictions, sample_weight):
+    def _update_terminal_region(
+        self,
+        tree,
+        terminal_regions,
+        leaf,
+        X,
+        y,
+        residual,
+        raw_predictions,
+        sample_weight,
+    ):
         pass
