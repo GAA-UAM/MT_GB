@@ -44,7 +44,6 @@ class Deviance(_gb_losses.ClassificationLossFunction):
                                 learning_rate,
                                 k=0):
 
-        X = X.astype(np.float32)
         terminal_regions = tree.apply(X)
 
         masked_terminal_regions = terminal_regions.copy()
@@ -113,11 +112,10 @@ class MultiOutputLeastSquaresError(_gb_losses.RegressionLossFunction):
 
     def get_init_raw_predictions(self, X, estimator):
         predictions = estimator.predict(X)
-        target_type = type_of_target(predictions)
-        if target_type in ["continuous-multioutput", "multiclass-multioutput"]:
+        if type_of_target(predictions) == 'continuous-multioutput' or 'multiclass-multioutput':
             predictions = predictions.reshape(-1, predictions.shape[1]).astype(
                 np.float64)
-        elif target_type == "continuous":
+        else:
             predictions = predictions.reshape(-1, 1).astype(np.float64)
         return predictions
 
@@ -138,10 +136,9 @@ class MultiOutputLeastSquaresError(_gb_losses.RegressionLossFunction):
         return init
 
     def negative_gradient(self, y, raw_predictions, **kargs):
-        target_type = type_of_target(y)
-        if target_type in ["continuous-multioutput", "multiclass-multioutput"]:
+        if type_of_target(y) == 'continuous-multioutput' or 'multiclass-multioutput':
             negative_gradient = np.squeeze(y) - raw_predictions
-        elif target_type == "continuous":
+        else:
             negative_gradient = np.squeeze(y) - raw_predictions.ravel()
         return negative_gradient
 
@@ -155,14 +152,12 @@ class MultiOutputLeastSquaresError(_gb_losses.RegressionLossFunction):
                                 sample_mask,
                                 learning_rate=0.1,
                                 k=0):
-        X = X.astype(np.float32)
-        target_type = type_of_target(y)
-        if target_type in ["continuous-multioutput", "multiclass-multioutput"]:
+        if type_of_target(y) == 'continuous-multioutput' or 'multiclass-multioutput':
             for i in range(y.shape[1]):
-                raw_predictions[:, i] += learning_rate * tree.predict(X)[:, i, 0]
-        elif target_type == "continuous":
+                raw_predictions[:, i] += learning_rate * \
+                    tree.predict(X)[:, i, 0]
+        else:
             raw_predictions[:, k] += learning_rate * tree.predict(X).ravel()
-        return raw_predictions
 
     def _update_terminal_region(self, tree, terminal_regions, leaf, X, y,
                                 residual, raw_predictions, sample_weight):
